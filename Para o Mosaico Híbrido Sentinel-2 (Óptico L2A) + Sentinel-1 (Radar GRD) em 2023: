@@ -1,0 +1,33 @@
+// 1. Área de Estudo (Ex: Estuário do Curimataú)
+// Desenhe um ponto ou polígono na tela e chame de 'geometry'
+
+// 2. Filtrar Sentinel-2 (Refletância de Superfície - L2A)
+var s2 = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+  .filterBounds(geometry)
+  .filterDate('2023-01-01', '2023-12-31')
+  .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 10))
+  .median();
+
+// Calcular NDVI
+var ndvi = s2.normalizedDifference(['B8', 'B4']).rename('NDVI');
+
+// 3. Filtrar Sentinel-1 (Radar Ortorretificado GRD)
+var s1 = ee.ImageCollection('COPERNICUS/S1_GRD')
+  .filterBounds(geometry)
+  .filterDate('2023-01-01', '2023-12-31')
+  .filter(ee.Filter.eq('instrumentMode', 'IW'))
+  .filter(ee.Filter.listContains('transmitterReceiverPolarisation', 'VV'))
+  .filter(ee.Filter.listContains('transmitterReceiverPolarisation', 'VH'))
+  .median();
+
+// 4. Empilhar Bandas (Composição Híbrida de Zamboni et al., 2025)
+var imagemHibrida = ndvi.addBands(s1.select('VV')).addBands(s1.select('VH'));
+
+// 5. Exportar para o Google Drive
+Export.image.toDrive({
+  image: imagemHibrida.clip(geometry),
+  description: 'Curimatau_2023_Hibrida',
+  scale: 10,
+  region: geometry,
+  maxPixels: 1e13
+});
