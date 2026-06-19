@@ -1,33 +1,45 @@
-// 1. Área de Estudo (Ex: Estuário do Curimataú)
-// Desenhe um ponto ou polígono na tela e chame de 'geometry'
+import ee
 
-// 2. Filtrar Sentinel-2 (Refletância de Superfície - L2A)
-var s2 = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
-  .filterBounds(geometry)
-  .filterDate('2023-01-01', '2023-12-31')
-  .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 10))
-  .median();
+# 1. Função de Máscara de Nuvens para Sentinel-2
+def mascarar_nuvens_s2(image):
+    qa = image.select('QA60')
+    cloud_bit_mask = 1 << 10
+    cirrus_bit_mask = 1 << 11
+    mask = qa.bitwiseAnd(cloud_bit_mask).eq(0).and(qa.bitwiseAnd(cirrus_bit_mask).eq(0))
+    return image.updateMask(mask).divide(10000)
 
-// Calcular NDVI
-var ndvi = s2.normalizedDifference(['B8', 'B4']).rename('NDVI');
+# 2. Processamento Óptico (Sentinel-2) - Mediana 2023
+s2_colecao = (ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+              .filterBounds(geometry)
+              .filterDate('2023-01-01', '2023-12-31')
+              .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 10))
+              .map(mascarar_nuvens_s2))
 
-// 3. Filtrar Sentinel-1 (Radar Ortorretificado GRD)
-var s1 = ee.ImageCollection('COPERNICUS/S1_GRD')
-  .filterBounds(geometry)
-  .filterDate('2023-01-01', '2023-12-31')
-  .filter(ee.Filter.eq('instrumentMode', 'IW'))
-  .filter(ee.Filter.listContains('transmitterReceiverPolarisation', 'VV'))
-  .filter(ee.Filter.listContains('transmitterReceiverPolarisation', 'VH'))
-  .median();
+s2_mediana = s2_colecao.median()
+ndvi_2023 = s2_mediana.normalizedDifference(['B8', 'B4']).rename('NDVI')
 
-// 4. Empilhar Bandas (Composição Híbrida de Zamboni et al., 2025)
-var imagemHibrida = ndvi.addBands(s1.select('VV')).addBands(s1.select('VH'));
+# 3. Processamento de Radar (Sentinel-1 GRD) - Mediana 2023
+s1_colecao = (ee.ImageCollection('COPERNICUS/S1_GRD')
+              .filterBounds(geometry)
+              .filterDate('2023-01-01', '2023-12-31')
+              .filter(ee.Filter.eq('instrumentMode', 'IW'))
+              .filter(ee.Filter.listContains('transmitterReceiverPolarisation', 'VV'))
+              .filter(ee.Filter.listContains('transmitterReceiverPolarisation', 'VH')))
 
-// 5. Exportar para o Google Drive
-Export.image.toDrive({
-  image: imagemHibrida.clip(geometry),
-  description: 'Curimatau_2023_Hibrida',
-  scale: 10,
-  region: geometry,
-  maxPixels: 1e13
-});
+s1_mediana = s1_colecao.median()
+
+# 4. Empilhamento Híbrido (Convertido para Float32 para compatibilidade no QGIS)
+imagem_hibrida_2023 = (ndvi_2023.float()
+                       .addBands(s1_mediana.select('VV').float())
+                       .addBands(s1_mediana.select('VH').float()))
+
+# 5. Exportação para o Google Drive
+tarefa_2023 = ee.Batch.Export.image.toDrive(
+    image=imagem_hibrida_2023.clip(geometry),
+    description='Curimatau_2023_Hibrida_Sentinel',
+    scale=10,
+    region=geometry,
+    maxPixels=1e13
+)
+tarefa_2023.start()
+print("Tarefa de 2023 iniciada.")
