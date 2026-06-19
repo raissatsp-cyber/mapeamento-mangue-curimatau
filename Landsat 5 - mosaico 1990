@@ -1,0 +1,26 @@
+import ee
+
+# (A função 'processar_landsat5' definida acima permanece idêntica)
+
+# 1. Filtragem e Mediana para o ano de 1990
+l5_1990_colecao = (ee.ImageCollection('LANDSAT/LT05/C02/T1_L2')
+                    .filterBounds(geometry)
+                    .filterDate('1990-01-01', '1990-12-31')
+                    .filter(ee.Filter.lt('CLOUD_COVER', 15))
+                    .map(processar_landsat5))
+
+l5_1990_mediana = l5_1990_colecao.median()
+
+# 2. Cálculo do NDVI para o cenário original de 1990
+ndvi_1990 = l5_1990_mediana.normalizedDifference(['SR_B4', 'SR_B3']).rename('NDVI_1990')
+
+# 3. Exportação para o Google Drive
+tarefa_1990 = ee.Batch.Export.image.toDrive(
+    image=ndvi_1990.clip(geometry),
+    description='Curimatau_1990_Mosaico_Landsat5',
+    scale=30,
+    region=geometry,
+    maxPixels=1e13
+)
+tarefa_1990.start()
+print("Tarefa de 1990 iniciada.")
